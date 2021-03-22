@@ -1,0 +1,174 @@
+Organizations:
+
+    - &OrdererOrg
+        Name: OrdererOrg
+
+        ID: OrdererMSP
+
+        MSPDir: crypto-config/ordererOrganizations/example.com/msp
+
+        Policies:
+            Readers:
+                Type: Signature
+                Rule: "OR('OrdererMSP.member')"
+            Writers:
+                Type: Signature
+                Rule: "OR('OrdererMSP.member')"
+            Admins:
+                Type: Signature
+                Rule: "OR('OrdererMSP.admin')"
+{{range .Organizations}}
+    - &{{.Name}}
+        Name: {{.Name}}MSP
+
+        ID: {{.Name}}MSP
+
+        MSPDir: crypto-config/peerOrganizations/{{.GetNameToLower}}.example.com/msp
+
+        Policies:
+            Readers:
+                Type: Signature
+                Rule: "OR('{{.Name}}MSP.admin', '{{.Name}}MSP.peer', '{{.Name}}MSP.client')"
+            Writers:
+                Type: Signature
+                Rule: "OR('{{.Name}}MSP.admin', '{{.Name}}MSP.client')"
+            Admins:
+                Type: Signature
+                Rule: "OR('{{.Name}}MSP.admin')"
+            Endorsement:
+                Type: Signature
+                Rule: "OR('{{.Name}}MSP.peer')"
+
+        AnchorPeers:
+            - Host: {{.AnchorPeer.Host}}
+              Port: {{.AnchorPeer.Port}}
+{{end}}
+
+Capabilities:
+    Channel: &ChannelCapabilities
+
+        V2_0: true
+
+    Orderer: &OrdererCapabilities
+
+        V2_0: true
+
+    Application: &ApplicationCapabilities
+
+        V2_0: true
+
+Application: &ApplicationDefaults
+
+    Organizations:
+
+    Policies:
+        Readers:
+            Type: ImplicitMeta
+            Rule: "ANY Readers"
+        Writers:
+            Type: ImplicitMeta
+            Rule: "ANY Writers"
+        Admins:
+            Type: ImplicitMeta
+            Rule: "MAJORITY Admins"
+        LifecycleEndorsement:
+            Type: ImplicitMeta
+            Rule: "MAJORITY Endorsement"
+        Endorsement:
+            Type: ImplicitMeta
+            Rule: "MAJORITY Endorsement"
+
+    Capabilities:
+        <<: *ApplicationCapabilities
+
+Orderer: &OrdererDefaults
+
+    OrdererType: {{.Consensus.OrdererType}}
+
+    EtcdRaft:
+        Consenters:
+        - Host: {{(index .Consensus.Orderers 0).Host}}.example.com
+          Port: {{(index .Consensus.Orderers 0).Port}}
+          ClientTLSCert: crypto-config/ordererOrganizations/example.com/orderers/{{(index .Consensus.Orderers 0).Host}}.example.com/tls/server.crt
+          ServerTLSCert: crypto-config/ordererOrganizations/example.com/orderers/{{(index .Consensus.Orderers 0).Host}}.example.com/tls/server.crt
+
+    Addresses:
+        - {{(index .Consensus.Orderers 0).Host}}.example.com:{{(index .Consensus.Orderers 0).Port}}
+
+    BatchTimeout: {{.Consensus.BatchTimeout}}s
+
+    BatchSize:
+
+        MaxMessageCount: {{.Consensus.BatchSize.MaxMessageCount}}
+
+        AbsoluteMaxBytes: {{.Consensus.BatchSize.AbsoluteMaxBytes}} MB
+
+        PreferredMaxBytes: {{.Consensus.BatchSize.PreferredMaxBytes}} KB
+
+    Organizations:
+
+    Policies:
+        Readers:
+            Type: ImplicitMeta
+            Rule: "ANY Readers"
+        Writers:
+            Type: ImplicitMeta
+            Rule: "ANY Writers"
+        Admins:
+            Type: ImplicitMeta
+            Rule: "MAJORITY Admins"
+        BlockValidation:
+            Type: ImplicitMeta
+            Rule: "ANY Writers"
+
+Channel: &ChannelDefaults
+    Policies:
+        Readers:
+            Type: ImplicitMeta
+            Rule: "ANY Readers"
+        Writers:
+            Type: ImplicitMeta
+            Rule: "ANY Writers"
+        Admins:
+            Type: ImplicitMeta
+            Rule: "MAJORITY Admins"
+
+    Capabilities:
+        <<: *ChannelCapabilities
+
+Profiles:
+
+    {{.Channel.Name}}:
+        Consortium: {{.Channel.Consortium}}
+        <<: *ChannelDefaults
+        Application:
+            <<: *ApplicationDefaults
+            Organizations:{{range .Channel.Organizatioins}}
+                - *{{.Name}}{{end}}
+            Capabilities:
+                <<: *ApplicationCapabilities
+
+    OrdererGenesis:
+        <<: *ChannelDefaults
+        Capabilities:
+            <<: *ChannelCapabilities
+        Orderer:
+            <<: *OrdererDefaults
+            OrdererType: {{.Consensus.OrdererType}}
+            EtcdRaft:
+                Consenters:{{range .Consensus.Orderers}}
+                - Host: {{.Host}}.example.com
+                  Port: {{.Port}}
+                  ClientTLSCert: crypto-config/ordererOrganizations/example.com/orderers/{{.Host}}.example.com/tls/server.crt
+                  ServerTLSCert: crypto-config/ordererOrganizations/example.com/orderers/{{.Host}}.example.com/tls/server.crt{{end}}
+            Addresses:{{range .Consensus.Orderers}}
+                - {{.Host}}.example.com:{{.Port}}{{end}}
+
+            Organizations:
+            - *OrdererOrg
+            Capabilities:
+                <<: *OrdererCapabilities
+        Consortiums:
+            {{.Channel.Consortium}}:
+                Organizations:{{range .Channel.Organizatioins}}
+                - *{{.Name}}{{end}}
