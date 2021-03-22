@@ -23,6 +23,12 @@ type ChannelID struct {
 	Name string `json:"Name"`
 }
 
+type PeerInfo struct {
+	Org     string `json:"Org"`
+	Port    string `json:"Port"`
+	Channel string `json:"Channel"`
+}
+
 var tpl *template.Template
 
 //Pipeline
@@ -86,6 +92,8 @@ func main() {
 
 	//Section Channel Management
 	router.HandleFunc("/channel", createChannel).Methods("POST", http.MethodOptions)
+
+	router.HandleFunc("/channel/join", joinChannel).Methods("POST", http.MethodOptions)
 
 	router.Use(mux.CORSMethodMiddleware(router))
 
@@ -266,4 +274,68 @@ func createChannel(w http.ResponseWriter, r *http.Request) {
 		Message: "200 OK",
 	}
 	json.NewEncoder(w).Encode(success)
+}
+
+func joinChannel(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Access-Control-Allow-Origin", "*")
+	w.Header().Set("Access-Control-Allow-Headers", "Origin, X-Requested-With, Content-Type, Accept, Authorization")
+	w.Header().Set("Access-Control-Allow-Methods", "PUT,POST,GET,DELETE,OPTIONS")
+	w.Header().Set("X-Powered-By", "3.2.1")
+	w.Header().Set("Content-Type", "application/json;charset=utf-8")
+
+	var peerInfo = PeerInfo{}
+	err := json.NewDecoder(r.Body).Decode(&peerInfo)
+	if err != nil {
+		fmt.Println(err)
+	}
+	if peerInfo.Org == "" {
+		return
+	}
+	fmt.Println(Capitalize(peerInfo.Org) + "MSP")
+	fmt.Println(peerInfo.Port)
+	fmt.Println(peerInfo.Channel)
+	var channel = strings.ToLower(peerInfo.Channel)
+	os.Setenv("CORE_PEER_TLS_ENABLED", "true")
+	os.Setenv("ORDERER_CA", os.Getenv("PWD")+"/channel/crypto-config/ordererOrganizations/example.com/orderers/orderer1.example.com/msp/tlscacerts/tlsca.example.com-cert.pem")
+	os.Setenv("FABRIC_CFG_PATH", os.Getenv("PWD")+"/channel/config/")
+	//set global variables for peer
+	os.Setenv("CORE_PEER_LOCALMSPID", Capitalize(peerInfo.Org)+"MSP")
+	os.Setenv("CORE_PEER_TLS_ROOTCERT_FILE", os.Getenv("PWD")+"/channel/crypto-config/peerOrganizations/"+peerInfo.Org+".example.com/peers/peer0."+peerInfo.Org+".example.com/tls/ca.crt")
+	os.Setenv("CORE_PEER_MSPCONFIGPATH", os.Getenv("PWD")+"/channel/crypto-config/peerOrganizations/"+peerInfo.Org+".example.com/users/Admin@"+peerInfo.Org+".example.com/msp")
+	os.Setenv("CORE_PEER_ADDRESS", "localhost:"+peerInfo.Port)
+
+	//join the channel
+	out, err1 := exec.Command("peer", "channel", "join", "-b", "./channel-artifacts/"+channel+".block").Output()
+	if err1 != nil {
+		fmt.Println("Join the channel " + channel + " failed:" + err1.Error())
+		fmt.Println(out)
+		return
+	}
+
+	fmt.Println(out)
+
+	success := Success{
+		Payload: "Join Channel " + channel + " successfully",
+		Message: "200 OK",
+	}
+	json.NewEncoder(w).Encode(success)
+}
+
+func Capitalize(str string) string {
+	var upperStr string
+	vv := []rune(str) // 后文有介绍
+	for i := 0; i < len(vv); i++ {
+		if i == 0 {
+			if vv[i] >= 97 && vv[i] <= 122 { // 后文有介绍
+				vv[i] -= 32 // string的码表相差32位
+				upperStr += string(vv[i])
+			} else {
+				fmt.Println("Not begins with lowercase letter,")
+				return str
+			}
+		} else {
+			upperStr += string(vv[i])
+		}
+	}
+	return upperStr
 }
