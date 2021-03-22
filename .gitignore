@@ -1,0 +1,6 @@
+channel-artifacts/*
+docker-compose.yaml
+channel/crypto-config
+channel/*.tx
+channel/*.yaml
+channel/*.block
