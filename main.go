@@ -102,6 +102,8 @@ func main() {
 
 	router.HandleFunc("/contract/approve", approveChaincode).Methods("POST", http.MethodOptions)
 
+	router.HandleFunc("/contract/checkApprove", checkApprove).Methods("POST", http.MethodOptions)
+
 	router.Use(mux.CORSMethodMiddleware(router))
 
 	fmt.Println("Server is listenning on localhost:8080")
@@ -410,7 +412,7 @@ func approveChaincode(w http.ResponseWriter, r *http.Request) {
 	var channel = strings.ToLower(approveInfo.ContractInfo.PeerInfo.Channel)
 	out, err1 := exec.Command(
 		"peer", "lifecycle", "chaincode", "approveformyorg", "-o", "localhost:7050",
-		"--ordererTLSHostnameOverride", "orderer.example.com", "--tls",
+		"--ordererTLSHostnameOverride", "orderer1.example.com", "--tls",
 		"--collections-config", os.Getenv("PRIVATE_DATA_CONFIG"),
 		"--cafile", os.Getenv("ORDERER_CA"),
 		"--channelID", channel,
@@ -430,6 +432,48 @@ func approveChaincode(w http.ResponseWriter, r *http.Request) {
 		Message: "200 OK",
 	}
 	json.NewEncoder(w).Encode(success)
+}
+
+func checkApprove(w http.ResponseWriter, r *http.Request) {
+	setHeader(w)
+
+	var approveInfo = ApproveInfo{}
+	err := json.NewDecoder(r.Body).Decode(&approveInfo)
+	if err != nil {
+		fmt.Println(err)
+	}
+	if approveInfo.ContractInfo.ContractName == "" {
+		return
+	}
+
+	setEnvironmentForPeer(approveInfo.ContractInfo.PeerInfo.Org, approveInfo.ContractInfo.PeerInfo.Port)
+	os.Setenv("PRIVATE_DATA_CONFIG", os.Getenv("PWD")+"/private-data/collections_config.json")
+
+	//check the approval
+	var channel = strings.ToLower(approveInfo.ContractInfo.PeerInfo.Channel)
+	out, err1 := exec.Command(
+		"peer", "lifecycle", "chaincode", "checkcommitreadiness",
+		"--collections-config", os.Getenv("PRIVATE_DATA_CONFIG"),
+		"--channelID", channel,
+		"--name", approveInfo.ContractInfo.ContractName,
+		"--version", approveInfo.ContractInfo.Version,
+		"--sequence", approveInfo.ContractInfo.Version,
+		"--output", "json",
+		"--init-required").Output()
+	if err1 != nil {
+		fmt.Println("check the approvals failed:" + err1.Error())
+		fmt.Println(string(out))
+		return
+	}
+
+	fmt.Println(string(out))
+
+	success := Success{
+		Payload: string(out),
+		Message: "200 OK",
+	}
+	json.NewEncoder(w).Encode(success)
+
 }
 
 func Capitalize(str string) string {
