@@ -100,6 +100,8 @@ func main() {
 
 	router.HandleFunc("/contract/install", installChaincode).Methods("POST", http.MethodOptions)
 
+	router.HandleFunc("/contract/approve", approveChaincode).Methods("POST", http.MethodOptions)
+
 	router.Use(mux.CORSMethodMiddleware(router))
 
 	fmt.Println("Server is listenning on localhost:8080")
@@ -109,11 +111,7 @@ func main() {
 
 func requestConfigtx(w http.ResponseWriter, r *http.Request) {
 	//set the header
-	w.Header().Set("Access-Control-Allow-Origin", "*")
-	w.Header().Set("Access-Control-Allow-Headers", "Origin, X-Requested-With, Content-Type, Accept, Authorization")
-	w.Header().Set("Access-Control-Allow-Methods", "PUT,POST,GET,DELETE,OPTIONS")
-	w.Header().Set("X-Powered-By", "3.2.1")
-	w.Header().Set("Content-Type", "application/json;charset=utf-8")
+	setHeader(w)
 
 	var cfgtx = configtx.Configtx{}
 	err := json.NewDecoder(r.Body).Decode(&cfgtx)
@@ -161,11 +159,7 @@ func patchConfigtx(w http.ResponseWriter, r *http.Request) {
 }
 
 func requestCrypto(w http.ResponseWriter, r *http.Request) {
-	w.Header().Set("Access-Control-Allow-Origin", "*")
-	w.Header().Set("Access-Control-Allow-Headers", "Origin, X-Requested-With, Content-Type, Accept, Authorization")
-	w.Header().Set("Access-Control-Allow-Methods", "PUT,POST,GET,DELETE,OPTIONS")
-	w.Header().Set("X-Powered-By", "3.2.1")
-	w.Header().Set("Content-Type", "application/json;charset=utf-8")
+	setHeader(w)
 
 	var configCp = crypto.ConfigCp{}
 	err := json.NewDecoder(r.Body).Decode(&configCp)
@@ -207,11 +201,7 @@ func requestCrypto(w http.ResponseWriter, r *http.Request) {
 }
 
 func nodeDeploy(w http.ResponseWriter, r *http.Request) {
-	w.Header().Set("Access-Control-Allow-Origin", "*")
-	w.Header().Set("Access-Control-Allow-Headers", "Origin, X-Requested-With, Content-Type, Accept, Authorization")
-	w.Header().Set("Access-Control-Allow-Methods", "PUT,POST,GET,DELETE,OPTIONS")
-	w.Header().Set("X-Powered-By", "3.2.1")
-	w.Header().Set("Content-Type", "application/json;charset=utf-8")
+	setHeader(w)
 
 	fmt.Println("Deploying node")
 
@@ -232,11 +222,7 @@ func nodeDeploy(w http.ResponseWriter, r *http.Request) {
 }
 
 func createChannel(w http.ResponseWriter, r *http.Request) {
-	w.Header().Set("Access-Control-Allow-Origin", "*")
-	w.Header().Set("Access-Control-Allow-Headers", "Origin, X-Requested-With, Content-Type, Accept, Authorization")
-	w.Header().Set("Access-Control-Allow-Methods", "PUT,POST,GET,DELETE,OPTIONS")
-	w.Header().Set("X-Powered-By", "3.2.1")
-	w.Header().Set("Content-Type", "application/json;charset=utf-8")
+	setHeader(w)
 
 	var channelID = ChannelID{}
 	err := json.NewDecoder(r.Body).Decode(&channelID)
@@ -249,14 +235,7 @@ func createChannel(w http.ResponseWriter, r *http.Request) {
 	channelName := strings.ToLower(channelID.Name)
 	fmt.Println("Creating channel", channelName)
 
-	os.Setenv("CORE_PEER_TLS_ENABLED", "true")
-	os.Setenv("ORDERER_CA", os.Getenv("PWD")+"/channel/crypto-config/ordererOrganizations/example.com/orderers/orderer1.example.com/msp/tlscacerts/tlsca.example.com-cert.pem")
-	os.Setenv("FABRIC_CFG_PATH", os.Getenv("PWD")+"/channel/config/")
-	//set global variables for peer0 of org1
-	os.Setenv("CORE_PEER_LOCALMSPID", "Org1MSP")
-	os.Setenv("CORE_PEER_TLS_ROOTCERT_FILE", os.Getenv("PWD")+"/channel/crypto-config/peerOrganizations/org1.example.com/peers/peer0.org1.example.com/tls/ca.crt")
-	os.Setenv("CORE_PEER_MSPCONFIGPATH", os.Getenv("PWD")+"/channel/crypto-config/peerOrganizations/org1.example.com/users/Admin@org1.example.com/msp")
-	os.Setenv("CORE_PEER_ADDRESS", "localhost:7051")
+	setEnvironmentForPeer("org1", "7051")
 
 	//create the channel
 	out, err1 := exec.Command(
@@ -282,11 +261,7 @@ func createChannel(w http.ResponseWriter, r *http.Request) {
 }
 
 func joinChannel(w http.ResponseWriter, r *http.Request) {
-	w.Header().Set("Access-Control-Allow-Origin", "*")
-	w.Header().Set("Access-Control-Allow-Headers", "Origin, X-Requested-With, Content-Type, Accept, Authorization")
-	w.Header().Set("Access-Control-Allow-Methods", "PUT,POST,GET,DELETE,OPTIONS")
-	w.Header().Set("X-Powered-By", "3.2.1")
-	w.Header().Set("Content-Type", "application/json;charset=utf-8")
+	setHeader(w)
 
 	var peerInfo = PeerInfo{}
 	err := json.NewDecoder(r.Body).Decode(&peerInfo)
@@ -298,14 +273,8 @@ func joinChannel(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var channel = strings.ToLower(peerInfo.Channel)
-	os.Setenv("CORE_PEER_TLS_ENABLED", "true")
-	os.Setenv("ORDERER_CA", os.Getenv("PWD")+"/channel/crypto-config/ordererOrganizations/example.com/orderers/orderer1.example.com/msp/tlscacerts/tlsca.example.com-cert.pem")
-	os.Setenv("FABRIC_CFG_PATH", os.Getenv("PWD")+"/channel/config/")
-	//set global variables for peer
-	os.Setenv("CORE_PEER_LOCALMSPID", Capitalize(peerInfo.Org)+"MSP")
-	os.Setenv("CORE_PEER_TLS_ROOTCERT_FILE", os.Getenv("PWD")+"/channel/crypto-config/peerOrganizations/"+peerInfo.Org+".example.com/peers/peer0."+peerInfo.Org+".example.com/tls/ca.crt")
-	os.Setenv("CORE_PEER_MSPCONFIGPATH", os.Getenv("PWD")+"/channel/crypto-config/peerOrganizations/"+peerInfo.Org+".example.com/users/Admin@"+peerInfo.Org+".example.com/msp")
-	os.Setenv("CORE_PEER_ADDRESS", "localhost:"+peerInfo.Port)
+
+	setEnvironmentForPeer(peerInfo.Org, peerInfo.Port)
 
 	//join the channel
 	out, err1 := exec.Command("peer", "channel", "join", "-b", "./channel-artifacts/"+channel+".block").Output()
@@ -332,11 +301,7 @@ type ContractInfo struct {
 }
 
 func packageChaincode(w http.ResponseWriter, r *http.Request) {
-	w.Header().Set("Access-Control-Allow-Origin", "*")
-	w.Header().Set("Access-Control-Allow-Headers", "Origin, X-Requested-With, Content-Type, Accept, Authorization")
-	w.Header().Set("Access-Control-Allow-Methods", "PUT,POST,GET,DELETE,OPTIONS")
-	w.Header().Set("X-Powered-By", "3.2.1")
-	w.Header().Set("Content-Type", "application/json;charset=utf-8")
+	setHeader(w)
 
 	var contractInfo = ContractInfo{}
 	err := json.NewDecoder(r.Body).Decode(&contractInfo)
@@ -347,14 +312,7 @@ func packageChaincode(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	os.Setenv("CORE_PEER_TLS_ENABLED", "true")
-	os.Setenv("ORDERER_CA", os.Getenv("PWD")+"/channel/crypto-config/ordererOrganizations/example.com/orderers/orderer1.example.com/msp/tlscacerts/tlsca.example.com-cert.pem")
-	os.Setenv("FABRIC_CFG_PATH", os.Getenv("PWD")+"/channel/config/")
-	//set global variables for peer
-	os.Setenv("CORE_PEER_LOCALMSPID", Capitalize(contractInfo.PeerInfo.Org)+"MSP")
-	os.Setenv("CORE_PEER_TLS_ROOTCERT_FILE", os.Getenv("PWD")+"/channel/crypto-config/peerOrganizations/"+contractInfo.PeerInfo.Org+".example.com/peers/peer0."+contractInfo.PeerInfo.Org+".example.com/tls/ca.crt")
-	os.Setenv("CORE_PEER_MSPCONFIGPATH", os.Getenv("PWD")+"/channel/crypto-config/peerOrganizations/"+contractInfo.PeerInfo.Org+".example.com/users/Admin@"+contractInfo.PeerInfo.Org+".example.com/msp")
-	os.Setenv("CORE_PEER_ADDRESS", "localhost:"+contractInfo.PeerInfo.Port)
+	setEnvironmentForPeer(contractInfo.PeerInfo.Org, contractInfo.PeerInfo.Port)
 
 	//package the contract
 	fmt.Println("Packing the contract", contractInfo.ContractName)
@@ -381,11 +339,7 @@ func packageChaincode(w http.ResponseWriter, r *http.Request) {
 }
 
 func installChaincode(w http.ResponseWriter, r *http.Request) {
-	w.Header().Set("Access-Control-Allow-Origin", "*")
-	w.Header().Set("Access-Control-Allow-Headers", "Origin, X-Requested-With, Content-Type, Accept, Authorization")
-	w.Header().Set("Access-Control-Allow-Methods", "PUT,POST,GET,DELETE,OPTIONS")
-	w.Header().Set("X-Powered-By", "3.2.1")
-	w.Header().Set("Content-Type", "application/json;charset=utf-8")
+	setHeader(w)
 
 	var contractInfo = ContractInfo{}
 	err := json.NewDecoder(r.Body).Decode(&contractInfo)
@@ -395,15 +349,7 @@ func installChaincode(w http.ResponseWriter, r *http.Request) {
 	if contractInfo.ContractName == "" {
 		return
 	}
-
-	os.Setenv("CORE_PEER_TLS_ENABLED", "true")
-	os.Setenv("ORDERER_CA", os.Getenv("PWD")+"/channel/crypto-config/ordererOrganizations/example.com/orderers/orderer1.example.com/msp/tlscacerts/tlsca.example.com-cert.pem")
-	os.Setenv("FABRIC_CFG_PATH", os.Getenv("PWD")+"/channel/config/")
-	//set global variables for peer
-	os.Setenv("CORE_PEER_LOCALMSPID", Capitalize(contractInfo.PeerInfo.Org)+"MSP")
-	os.Setenv("CORE_PEER_TLS_ROOTCERT_FILE", os.Getenv("PWD")+"/channel/crypto-config/peerOrganizations/"+contractInfo.PeerInfo.Org+".example.com/peers/peer0."+contractInfo.PeerInfo.Org+".example.com/tls/ca.crt")
-	os.Setenv("CORE_PEER_MSPCONFIGPATH", os.Getenv("PWD")+"/channel/crypto-config/peerOrganizations/"+contractInfo.PeerInfo.Org+".example.com/users/Admin@"+contractInfo.PeerInfo.Org+".example.com/msp")
-	os.Setenv("CORE_PEER_ADDRESS", "localhost:"+contractInfo.PeerInfo.Port)
+	setEnvironmentForPeer(contractInfo.PeerInfo.Org, contractInfo.PeerInfo.Port)
 
 	//Install the contract
 	fmt.Println("Install the contract", contractInfo.ContractName)
@@ -438,6 +384,10 @@ func installChaincode(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(success)
 }
 
+func approveChaincode(w http.ResponseWriter, r *http.Request) {
+
+}
+
 func Capitalize(str string) string {
 	var upperStr string
 	vv := []rune(str) // 后文有介绍
@@ -455,4 +405,23 @@ func Capitalize(str string) string {
 		}
 	}
 	return upperStr
+}
+
+func setHeader(w http.ResponseWriter) {
+	w.Header().Set("Access-Control-Allow-Origin", "*")
+	w.Header().Set("Access-Control-Allow-Headers", "Origin, X-Requested-With, Content-Type, Accept, Authorization")
+	w.Header().Set("Access-Control-Allow-Methods", "PUT,POST,GET,DELETE,OPTIONS")
+	w.Header().Set("X-Powered-By", "3.2.1")
+	w.Header().Set("Content-Type", "application/json;charset=utf-8")
+}
+
+func setEnvironmentForPeer(org string, port string) {
+	os.Setenv("CORE_PEER_TLS_ENABLED", "true")
+	os.Setenv("ORDERER_CA", os.Getenv("PWD")+"/channel/crypto-config/ordererOrganizations/example.com/orderers/orderer1.example.com/msp/tlscacerts/tlsca.example.com-cert.pem")
+	os.Setenv("FABRIC_CFG_PATH", os.Getenv("PWD")+"/channel/config/")
+	//set global variables for peer
+	os.Setenv("CORE_PEER_LOCALMSPID", Capitalize(org)+"MSP")
+	os.Setenv("CORE_PEER_TLS_ROOTCERT_FILE", os.Getenv("PWD")+"/channel/crypto-config/peerOrganizations/"+org+".example.com/peers/peer0."+org+".example.com/tls/ca.crt")
+	os.Setenv("CORE_PEER_MSPCONFIGPATH", os.Getenv("PWD")+"/channel/crypto-config/peerOrganizations/"+org+".example.com/users/Admin@"+org+".example.com/msp")
+	os.Setenv("CORE_PEER_ADDRESS", "localhost:"+port)
 }
