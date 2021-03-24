@@ -98,6 +98,8 @@ func main() {
 	//Section Smart Contract
 	router.HandleFunc("/contract/package", packageChaincode).Methods("POST", http.MethodOptions)
 
+	router.HandleFunc("/contract/install", installChaincode).Methods("POST", http.MethodOptions)
+
 	router.Use(mux.CORSMethodMiddleware(router))
 
 	fmt.Println("Server is listenning on localhost:8080")
@@ -266,11 +268,11 @@ func createChannel(w http.ResponseWriter, r *http.Request) {
 		"--cafile", os.Getenv("ORDERER_CA")).Output()
 	if err1 != nil {
 		fmt.Println("Create channel " + channelName + " failed:" + err1.Error())
-		fmt.Println(out)
+		fmt.Println(string(out))
 		return
 	}
 
-	fmt.Println(out)
+	fmt.Println(string(out))
 
 	success := Success{
 		Payload: "Channel " + channelName + " is created successfully",
@@ -309,11 +311,11 @@ func joinChannel(w http.ResponseWriter, r *http.Request) {
 	out, err1 := exec.Command("peer", "channel", "join", "-b", "./channel-artifacts/"+channel+".block").Output()
 	if err1 != nil {
 		fmt.Println("Join the channel " + channel + " failed:" + err1.Error())
-		fmt.Println(out)
+		fmt.Println(string(out))
 		return
 	}
 
-	fmt.Println(out)
+	fmt.Println(string(out))
 
 	success := Success{
 		Payload: "Join Channel " + channel + " successfully",
@@ -356,6 +358,7 @@ func packageChaincode(w http.ResponseWriter, r *http.Request) {
 
 	//package the contract
 	fmt.Println("Packing the contract", contractInfo.ContractName)
+	fmt.Println("contract label:" + contractInfo.ContractName + "_" + contractInfo.Version)
 	out, err1 := exec.Command(
 		"peer", "lifecycle", "chaincode", "package", contractInfo.ContractName+".tar.gz",
 		"--path", "./src/github.com/"+contractInfo.ContractName+"/go",
@@ -363,11 +366,11 @@ func packageChaincode(w http.ResponseWriter, r *http.Request) {
 		"--label", contractInfo.ContractName+"_"+contractInfo.Version).Output()
 	if err1 != nil {
 		fmt.Println("package the contract " + contractInfo.ContractName + " failed:" + err1.Error())
-		fmt.Println(out)
+		fmt.Println(string(out))
 		return
 	}
 
-	fmt.Println(out)
+	fmt.Println(string(out))
 
 	success := Success{
 		Payload: "Package the contract " + contractInfo.ContractName + " successfully",
@@ -375,6 +378,64 @@ func packageChaincode(w http.ResponseWriter, r *http.Request) {
 	}
 	json.NewEncoder(w).Encode(success)
 
+}
+
+func installChaincode(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Access-Control-Allow-Origin", "*")
+	w.Header().Set("Access-Control-Allow-Headers", "Origin, X-Requested-With, Content-Type, Accept, Authorization")
+	w.Header().Set("Access-Control-Allow-Methods", "PUT,POST,GET,DELETE,OPTIONS")
+	w.Header().Set("X-Powered-By", "3.2.1")
+	w.Header().Set("Content-Type", "application/json;charset=utf-8")
+
+	var contractInfo = ContractInfo{}
+	err := json.NewDecoder(r.Body).Decode(&contractInfo)
+	if err != nil {
+		fmt.Println(err)
+	}
+	if contractInfo.ContractName == "" {
+		return
+	}
+
+	os.Setenv("CORE_PEER_TLS_ENABLED", "true")
+	os.Setenv("ORDERER_CA", os.Getenv("PWD")+"/channel/crypto-config/ordererOrganizations/example.com/orderers/orderer1.example.com/msp/tlscacerts/tlsca.example.com-cert.pem")
+	os.Setenv("FABRIC_CFG_PATH", os.Getenv("PWD")+"/channel/config/")
+	//set global variables for peer
+	os.Setenv("CORE_PEER_LOCALMSPID", Capitalize(contractInfo.PeerInfo.Org)+"MSP")
+	os.Setenv("CORE_PEER_TLS_ROOTCERT_FILE", os.Getenv("PWD")+"/channel/crypto-config/peerOrganizations/"+contractInfo.PeerInfo.Org+".example.com/peers/peer0."+contractInfo.PeerInfo.Org+".example.com/tls/ca.crt")
+	os.Setenv("CORE_PEER_MSPCONFIGPATH", os.Getenv("PWD")+"/channel/crypto-config/peerOrganizations/"+contractInfo.PeerInfo.Org+".example.com/users/Admin@"+contractInfo.PeerInfo.Org+".example.com/msp")
+	os.Setenv("CORE_PEER_ADDRESS", "localhost:"+contractInfo.PeerInfo.Port)
+
+	//Install the contract
+	fmt.Println("Install the contract", contractInfo.ContractName)
+
+	out, err1 := exec.Command(
+		"peer", "lifecycle", "chaincode", "install", contractInfo.ContractName+".tar.gz").Output()
+	if err1 != nil {
+		fmt.Println("install the contract " + contractInfo.ContractName + " failed:" + err1.Error())
+		fmt.Println(string(out))
+		return
+	}
+
+	fmt.Println(string(out))
+
+	//Install the contract
+	fmt.Println("query the contract")
+
+	out, err1 = exec.Command(
+		"peer", "lifecycle", "chaincode", "queryinstalled").Output()
+	if err1 != nil {
+		fmt.Println("query the contract failed:" + err1.Error())
+		fmt.Println(string(out))
+		return
+	}
+
+	fmt.Println(string(out))
+
+	success := Success{
+		Payload: "Install the contract " + contractInfo.ContractName + " successfully",
+		Message: "200 OK",
+	}
+	json.NewEncoder(w).Encode(success)
 }
 
 func Capitalize(str string) string {
