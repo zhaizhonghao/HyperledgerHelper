@@ -364,7 +364,7 @@ func installChaincode(w http.ResponseWriter, r *http.Request) {
 
 	fmt.Println(string(out))
 
-	//Install the contract
+	//query the contract
 	fmt.Println("query the contract")
 
 	out, err1 = exec.Command(
@@ -376,16 +376,60 @@ func installChaincode(w http.ResponseWriter, r *http.Request) {
 	}
 
 	fmt.Println(string(out))
+	parts := strings.Split(string(out), "Package ID: ")
+	parts = strings.Split(parts[1], ",")
+	packageID := parts[0]
 
 	success := Success{
-		Payload: "Install the contract " + contractInfo.ContractName + " successfully",
+		Payload: packageID,
 		Message: "200 OK",
 	}
 	json.NewEncoder(w).Encode(success)
 }
 
-func approveChaincode(w http.ResponseWriter, r *http.Request) {
+type ApproveInfo struct {
+	ContractInfo ContractInfo `json:"ContractInfo"`
+	PackageID    string       `json:"PackageID"`
+}
 
+func approveChaincode(w http.ResponseWriter, r *http.Request) {
+	setHeader(w)
+	//query the package ID of installed contract
+	var approveInfo = ApproveInfo{}
+	err := json.NewDecoder(r.Body).Decode(&approveInfo)
+	if err != nil {
+		fmt.Println(err)
+	}
+	if approveInfo.ContractInfo.ContractName == "" {
+		return
+	}
+	setEnvironmentForPeer(approveInfo.ContractInfo.PeerInfo.Org, approveInfo.ContractInfo.PeerInfo.Port)
+	//export PRIVATE_DATA_CONFIG=${PWD}/artifacts/private-data/collections_config.json
+	os.Setenv("PRIVATE_DATA_CONFIG", os.Getenv("PWD")+"/private-data/collections_config.json")
+	//approve the contract
+	var channel = strings.ToLower(approveInfo.ContractInfo.PeerInfo.Channel)
+	out, err1 := exec.Command(
+		"peer", "lifecycle", "chaincode", "approveformyorg", "-o", "localhost:7050",
+		"--ordererTLSHostnameOverride", "orderer.example.com", "--tls",
+		"--collections-config", os.Getenv("PRIVATE_DATA_CONFIG"),
+		"--cafile", os.Getenv("ORDERER_CA"),
+		"--channelID", channel,
+		"--name", approveInfo.ContractInfo.ContractName,
+		"--version", approveInfo.ContractInfo.Version,
+		"--init-required",
+		"--package-id", approveInfo.PackageID,
+		"--sequence", approveInfo.ContractInfo.Version).Output()
+	if err1 != nil {
+		fmt.Println("approve the contract failed:" + err1.Error())
+		fmt.Println(string(out))
+		return
+	}
+
+	success := Success{
+		Payload: "approve the contract " + approveInfo.PackageID + " successfully!",
+		Message: "200 OK",
+	}
+	json.NewEncoder(w).Encode(success)
 }
 
 func Capitalize(str string) string {
