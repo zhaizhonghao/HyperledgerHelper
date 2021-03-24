@@ -4,3 +4,5 @@ channel/crypto-config
 channel/*.tx
 channel/*.yaml
 channel/*.block
+src/github.com/fabcar/go/vendor
+*.tar.gz
