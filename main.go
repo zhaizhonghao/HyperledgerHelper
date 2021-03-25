@@ -104,6 +104,8 @@ func main() {
 
 	router.HandleFunc("/contract/checkApprove", checkApprove).Methods("POST", http.MethodOptions)
 
+	router.HandleFunc("/contract/instantiate", instantiateChaincode).Methods("POST", http.MethodOptions)
+
 	router.Use(mux.CORSMethodMiddleware(router))
 
 	fmt.Println("Server is listenning on localhost:8080")
@@ -474,6 +476,70 @@ func checkApprove(w http.ResponseWriter, r *http.Request) {
 	}
 	json.NewEncoder(w).Encode(success)
 
+}
+
+type instantiateInfo struct {
+	Language     string     `json:"Language"`
+	Version      string     `json:"Version"`
+	ContractName string     `json:"ContractName"`
+	Approvers    []PeerInfo `json:"Approvers"`
+}
+
+func instantiateChaincode(w http.ResponseWriter, r *http.Request) {
+	fmt.Println("start instantiating the contract")
+	setHeader(w)
+
+	var instantiateInfo = instantiateInfo{}
+	err := json.NewDecoder(r.Body).Decode(&instantiateInfo)
+	if err != nil {
+
+		fmt.Println("parse the instantiateInfo failed", err)
+	}
+	if instantiateInfo.ContractName == "" {
+		return
+	}
+
+	setEnvironmentForPeer(instantiateInfo.Approvers[0].Org, instantiateInfo.Approvers[0].Port)
+	os.Setenv("PRIVATE_DATA_CONFIG", os.Getenv("PWD")+"/private-data/collections_config.json")
+
+	//instantiat the contract
+	var channel = strings.ToLower(instantiateInfo.Approvers[0].Channel)
+	args := []string{
+		"lifecycle", "chaincode", "commit",
+		"-o", "localhost:7050",
+		"--ordererTLSHostnameOverride", "orderer1.example.com",
+		"--tls", os.Getenv("CORE_PEER_TLS_ENABLED"),
+		"--cafile", os.Getenv("ORDERER_CA"),
+		"--channelID", channel,
+		"--name", instantiateInfo.ContractName,
+		"--collections-config", os.Getenv("PRIVATE_DATA_CONFIG"),
+		"--version", instantiateInfo.Version,
+		"--sequence", instantiateInfo.Version,
+		"--init-required",
+	}
+	for i := 0; i < len(instantiateInfo.Approvers); i++ {
+		arg1 := "--peerAddresses"
+		arg2 := "localhost:" + instantiateInfo.Approvers[i].Port
+		arg3 := "--tlsRootCertFiles"
+		arg4 := os.Getenv("PWD") + "/channel/crypto-config/peerOrganizations/" + instantiateInfo.Approvers[i].Org + ".example.com/peers/peer0." + instantiateInfo.Approvers[i].Org + ".example.com/tls/ca.crt"
+		args = append(args, arg1, arg2, arg3, arg4)
+	}
+	fmt.Println("instantiating the contract:", args)
+	fmt.Println("args:", args)
+	out, err1 := exec.Command("peer", args...).Output()
+	if err1 != nil {
+		fmt.Println("instantiate the contract failed:" + err1.Error())
+		fmt.Println(string(out))
+		return
+	}
+
+	fmt.Println(string(out))
+
+	success := Success{
+		Payload: "instantiate the contract " + instantiateInfo.ContractName + " successfully!",
+		Message: "200 OK",
+	}
+	json.NewEncoder(w).Encode(success)
 }
 
 func Capitalize(str string) string {
