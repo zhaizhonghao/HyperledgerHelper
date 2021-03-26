@@ -106,6 +106,8 @@ func main() {
 
 	router.HandleFunc("/contract/instantiate", instantiateChaincode).Methods("POST", http.MethodOptions)
 
+	router.HandleFunc("/contract/initialize", initializeChaincode).Methods("POST", http.MethodOptions)
+
 	router.Use(mux.CORSMethodMiddleware(router))
 
 	fmt.Println("Server is listenning on localhost:8080")
@@ -279,7 +281,7 @@ func joinChannel(w http.ResponseWriter, r *http.Request) {
 	var channel = strings.ToLower(peerInfo.Channel)
 
 	setEnvironmentForPeer(peerInfo.Org, peerInfo.Port)
-
+	fmt.Println(peerInfo.Org, peerInfo.Port, "is joining the channel...")
 	//join the channel
 	out, err1 := exec.Command("peer", "channel", "join", "-b", "./channel-artifacts/"+channel+".block").Output()
 	if err1 != nil {
@@ -317,7 +319,7 @@ func packageChaincode(w http.ResponseWriter, r *http.Request) {
 	}
 
 	setEnvironmentForPeer(contractInfo.PeerInfo.Org, contractInfo.PeerInfo.Port)
-
+	fmt.Println(contractInfo.PeerInfo.Org, contractInfo.PeerInfo.Port, "packaging...")
 	//package the contract
 	fmt.Println("Packing the contract", contractInfo.ContractName)
 	fmt.Println("contract label:" + contractInfo.ContractName + "_" + contractInfo.Version)
@@ -354,7 +356,7 @@ func installChaincode(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	setEnvironmentForPeer(contractInfo.PeerInfo.Org, contractInfo.PeerInfo.Port)
-
+	fmt.Println(contractInfo.PeerInfo.Org, contractInfo.PeerInfo.Port, "installing...")
 	//Install the contract
 	fmt.Println("Install the contract", contractInfo.ContractName)
 
@@ -408,14 +410,13 @@ func approveChaincode(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	setEnvironmentForPeer(approveInfo.ContractInfo.PeerInfo.Org, approveInfo.ContractInfo.PeerInfo.Port)
+	fmt.Println(approveInfo.ContractInfo.PeerInfo.Org, approveInfo.ContractInfo.PeerInfo.Port, "aproving...")
 	//export PRIVATE_DATA_CONFIG=${PWD}/artifacts/private-data/collections_config.json
-	os.Setenv("PRIVATE_DATA_CONFIG", os.Getenv("PWD")+"/private-data/collections_config.json")
 	//approve the contract
 	var channel = strings.ToLower(approveInfo.ContractInfo.PeerInfo.Channel)
 	out, err1 := exec.Command(
 		"peer", "lifecycle", "chaincode", "approveformyorg", "-o", "localhost:7050",
 		"--ordererTLSHostnameOverride", "orderer1.example.com", "--tls",
-		"--collections-config", os.Getenv("PRIVATE_DATA_CONFIG"),
 		"--cafile", os.Getenv("ORDERER_CA"),
 		"--channelID", channel,
 		"--name", approveInfo.ContractInfo.ContractName,
@@ -449,13 +450,11 @@ func checkApprove(w http.ResponseWriter, r *http.Request) {
 	}
 
 	setEnvironmentForPeer(approveInfo.ContractInfo.PeerInfo.Org, approveInfo.ContractInfo.PeerInfo.Port)
-	os.Setenv("PRIVATE_DATA_CONFIG", os.Getenv("PWD")+"/private-data/collections_config.json")
 
 	//check the approval
 	var channel = strings.ToLower(approveInfo.ContractInfo.PeerInfo.Channel)
 	out, err1 := exec.Command(
 		"peer", "lifecycle", "chaincode", "checkcommitreadiness",
-		"--collections-config", os.Getenv("PRIVATE_DATA_CONFIG"),
 		"--channelID", channel,
 		"--name", approveInfo.ContractInfo.ContractName,
 		"--version", approveInfo.ContractInfo.Version,
@@ -478,7 +477,7 @@ func checkApprove(w http.ResponseWriter, r *http.Request) {
 
 }
 
-type instantiateInfo struct {
+type InstantiateInfo struct {
 	Language     string     `json:"Language"`
 	Version      string     `json:"Version"`
 	ContractName string     `json:"ContractName"`
@@ -489,7 +488,7 @@ func instantiateChaincode(w http.ResponseWriter, r *http.Request) {
 	fmt.Println("start instantiating the contract")
 	setHeader(w)
 
-	var instantiateInfo = instantiateInfo{}
+	var instantiateInfo = InstantiateInfo{}
 	err := json.NewDecoder(r.Body).Decode(&instantiateInfo)
 	if err != nil {
 
@@ -500,8 +499,7 @@ func instantiateChaincode(w http.ResponseWriter, r *http.Request) {
 	}
 
 	setEnvironmentForPeer(instantiateInfo.Approvers[0].Org, instantiateInfo.Approvers[0].Port)
-	os.Setenv("PRIVATE_DATA_CONFIG", os.Getenv("PWD")+"/private-data/collections_config.json")
-
+	fmt.Println(instantiateInfo.Approvers[0].Org, instantiateInfo.Approvers[0].Port, "instantiating")
 	//instantiat the contract
 	var channel = strings.ToLower(instantiateInfo.Approvers[0].Channel)
 	args := []string{
@@ -512,7 +510,6 @@ func instantiateChaincode(w http.ResponseWriter, r *http.Request) {
 		"--cafile", os.Getenv("ORDERER_CA"),
 		"--channelID", channel,
 		"--name", instantiateInfo.ContractName,
-		"--collections-config", os.Getenv("PRIVATE_DATA_CONFIG"),
 		"--version", instantiateInfo.Version,
 		"--sequence", instantiateInfo.Version,
 		"--init-required",
@@ -537,6 +534,65 @@ func instantiateChaincode(w http.ResponseWriter, r *http.Request) {
 
 	success := Success{
 		Payload: "instantiate the contract " + instantiateInfo.ContractName + " successfully!",
+		Message: "200 OK",
+	}
+	json.NewEncoder(w).Encode(success)
+}
+
+type InitializeInfo struct {
+	InstantiateInfo InstantiateInfo `json:"InstantiateInfo"`
+	ArgsJSONString  string          `json:"ArgsJSONString"`
+}
+
+func initializeChaincode(w http.ResponseWriter, r *http.Request) {
+	fmt.Println("Start initializing the contract")
+	setHeader(w)
+
+	var initializeInfo = InitializeInfo{}
+	err := json.NewDecoder(r.Body).Decode(&initializeInfo)
+	if err != nil {
+
+		fmt.Println("parse the initializeInfo failed", err)
+	}
+	if initializeInfo.InstantiateInfo.ContractName == "" {
+		return
+	}
+
+	setEnvironmentForPeer(initializeInfo.InstantiateInfo.Approvers[0].Org, initializeInfo.InstantiateInfo.Approvers[0].Port)
+	//instantiat the contract
+	var channel = strings.ToLower(initializeInfo.InstantiateInfo.Approvers[0].Channel)
+	fmt.Println("argsJSON", initializeInfo.ArgsJSONString)
+	args := []string{
+		"chaincode", "invoke",
+		"-o", "localhost:7050",
+		"--ordererTLSHostnameOverride", "orderer1.example.com",
+		"--tls", os.Getenv("CORE_PEER_TLS_ENABLED"),
+		"--cafile", os.Getenv("ORDERER_CA"),
+		"-C", channel,
+		"-n", initializeInfo.InstantiateInfo.ContractName,
+		"--isInit",
+		"-c", "'" + initializeInfo.ArgsJSONString + "'",
+	}
+	for i := 0; i < len(initializeInfo.InstantiateInfo.Approvers); i++ {
+		arg1 := "--peerAddresses"
+		arg2 := "localhost:" + initializeInfo.InstantiateInfo.Approvers[i].Port
+		arg3 := "--tlsRootCertFiles"
+		arg4 := os.Getenv("PWD") + "/channel/crypto-config/peerOrganizations/" + initializeInfo.InstantiateInfo.Approvers[i].Org + ".example.com/peers/peer0." + initializeInfo.InstantiateInfo.Approvers[i].Org + ".example.com/tls/ca.crt"
+		args = append(args, arg1, arg2, arg3, arg4)
+	}
+	fmt.Println("iniliazing the contract:", args)
+	fmt.Println("args:", args)
+	out, err1 := exec.Command("peer", args...).Output()
+	if err1 != nil {
+		fmt.Println("iniliazing the contract failed:" + err1.Error())
+		fmt.Println(string(out))
+		return
+	}
+
+	fmt.Println(string(out))
+
+	success := Success{
+		Payload: "iniliazing the contract " + initializeInfo.InstantiateInfo.ContractName + " successfully!",
 		Message: "200 OK",
 	}
 	json.NewEncoder(w).Encode(success)

@@ -43,9 +43,17 @@ func (p PeerOrgCp) GetNameToLower() string {
 
 func (p PeerOrgCp) GetPortOfPeer() int {
 	var part = strings.Split(p.Name, "g")
-	port, err := strconv.Atoi(part[1])
-	if err != nil {
-		fmt.Println(err)
+	var port int
+	if part[1] == "" {
+		port = 1
+	} else {
+		portTemp, err := strconv.Atoi(part[1])
+		if err != nil {
+			fmt.Println(err)
+			return -1
+		}
+		port = portTemp
+
 	}
 	return (port+6)*1000 + 51
 }
@@ -61,18 +69,35 @@ func (p PeerOrgCp) GetPortOfCA() int {
 
 func (o OrdererCp) GetGeneralPortOfOrderer() int {
 	var part = strings.Split(o.HostName, "erer")
-	port, err := strconv.Atoi(part[1])
-	if err != nil {
-		fmt.Println(err)
+	var port int
+	if part[1] == "" {
+		port = 1
+	} else {
+		portTemp, err := strconv.Atoi(part[1])
+		if err != nil {
+			fmt.Println(err)
+			return -1
+		}
+		port = portTemp
+
 	}
+
 	return (port+6)*1000 + 50
 }
 
 func (o OrdererCp) GetOperationPortOfOrderer() int {
 	var part = strings.Split(o.HostName, "erer")
-	port, err := strconv.Atoi(part[1])
-	if err != nil {
-		fmt.Println(err)
+	var port int
+	if part[1] == "" {
+		port = 1
+	} else {
+		portTemp, err := strconv.Atoi(part[1])
+		if err != nil {
+			fmt.Println(err)
+			return -1
+		}
+		port = portTemp
+
 	}
 	return 8442 + port
 }
