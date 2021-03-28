@@ -6,3 +6,4 @@ channel/*.yaml
 channel/*.block
 src/github.com/fabcar/go/vendor
 *.tar.gz
+src/github.com/abac/go/vendor

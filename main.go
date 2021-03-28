@@ -85,7 +85,7 @@ func main() {
 	router.HandleFunc("/configtx", patchConfigtx).Methods("PATCH")
 
 	//Section Crypto
-	router.HandleFunc("/crypto", requestCrypto).Methods("POST", http.MethodOptions)
+	router.HandleFunc("/crypto", requestCrypto).Methods(http.MethodPost, http.MethodOptions)
 
 	//Section Node Deployment
 	router.HandleFunc("/node", nodeDeploy).Methods("GET", http.MethodOptions)
@@ -99,6 +99,8 @@ func main() {
 	router.HandleFunc("/contract/package", packageChaincode).Methods("POST", http.MethodOptions)
 
 	router.HandleFunc("/contract/install", installChaincode).Methods("POST", http.MethodOptions)
+
+	router.HandleFunc("/contract/fetchPacakgeID", fetchPackageID).Methods("GET", http.MethodOptions)
 
 	router.HandleFunc("/contract/approve", approveChaincode).Methods("POST", http.MethodOptions)
 
@@ -118,7 +120,10 @@ func main() {
 func requestConfigtx(w http.ResponseWriter, r *http.Request) {
 	//set the header
 	setHeader(w)
-
+	if (*r).Method == "OPTIONS" {
+		fmt.Println("Options request discard!")
+		return
+	}
 	var cfgtx = configtx.Configtx{}
 	err := json.NewDecoder(r.Body).Decode(&cfgtx)
 	if err != nil {
@@ -166,11 +171,18 @@ func patchConfigtx(w http.ResponseWriter, r *http.Request) {
 
 func requestCrypto(w http.ResponseWriter, r *http.Request) {
 	setHeader(w)
-
+	if (*r).Method == "OPTIONS" {
+		fmt.Println("Options request discard!")
+		return
+	}
 	var configCp = crypto.ConfigCp{}
 	err := json.NewDecoder(r.Body).Decode(&configCp)
 	if err != nil {
-		fmt.Println(err)
+		fmt.Println("parse configCp error", err)
+		return
+	}
+	if len(configCp.OrdererCps) == 0 {
+		return
 	}
 	fmt.Println("Get configCp", configCp)
 	//Generate crypto-config.yaml
@@ -196,19 +208,22 @@ func requestCrypto(w http.ResponseWriter, r *http.Request) {
 		fmt.Println(err)
 	}
 	//Generate the crypto-config file
-	cmd := exec.Command("cryptogen", "generate", "--config=channel/crypto-config.yaml", "--output=channel/crypto-config")
+	out, err := exec.Command("cryptogen", "generate", "--config=channel/crypto-config.yaml", "--output=channel/crypto-config").CombinedOutput()
 
-	err = cmd.Run()
 	if err != nil {
-		fmt.Println("Execute Command failed:" + err.Error())
+		fmt.Println("Execute Command failed:"+err.Error(), string(out))
 		return
 	}
+	fmt.Println("logs", string(out))
 	json.NewEncoder(w).Encode(configCp)
 }
 
 func nodeDeploy(w http.ResponseWriter, r *http.Request) {
 	setHeader(w)
-
+	if (*r).Method == "OPTIONS" {
+		fmt.Println("Options request discard!")
+		return
+	}
 	fmt.Println("Deploying node")
 
 	//Creating or starting the docker containers
@@ -229,7 +244,10 @@ func nodeDeploy(w http.ResponseWriter, r *http.Request) {
 
 func createChannel(w http.ResponseWriter, r *http.Request) {
 	setHeader(w)
-
+	if (*r).Method == "OPTIONS" {
+		fmt.Println("Options request discard!")
+		return
+	}
 	var channelID = ChannelID{}
 	err := json.NewDecoder(r.Body).Decode(&channelID)
 	if err != nil {
@@ -268,7 +286,10 @@ func createChannel(w http.ResponseWriter, r *http.Request) {
 
 func joinChannel(w http.ResponseWriter, r *http.Request) {
 	setHeader(w)
-
+	if (*r).Method == "OPTIONS" {
+		fmt.Println("Options request discard!")
+		return
+	}
 	var peerInfo = PeerInfo{}
 	err := json.NewDecoder(r.Body).Decode(&peerInfo)
 	if err != nil {
@@ -308,7 +329,10 @@ type ContractInfo struct {
 
 func packageChaincode(w http.ResponseWriter, r *http.Request) {
 	setHeader(w)
-
+	if (*r).Method == "OPTIONS" {
+		fmt.Println("Options request discard!")
+		return
+	}
 	var contractInfo = ContractInfo{}
 	err := json.NewDecoder(r.Body).Decode(&contractInfo)
 	if err != nil {
@@ -323,18 +347,23 @@ func packageChaincode(w http.ResponseWriter, r *http.Request) {
 	//package the contract
 	fmt.Println("Packing the contract", contractInfo.ContractName)
 	fmt.Println("contract label:" + contractInfo.ContractName + "_" + contractInfo.Version)
-	out, err1 := exec.Command(
-		"peer", "lifecycle", "chaincode", "package", contractInfo.ContractName+".tar.gz",
-		"--path", "./src/github.com/"+contractInfo.ContractName+"/go",
+	fmt.Println("executing:")
+	args := []string{
+		"lifecycle", "chaincode", "package", contractInfo.ContractName + ".tar.gz",
+		"--path", "./src/github.com/" + contractInfo.ContractName + "/go",
 		"--lang", contractInfo.Language,
-		"--label", contractInfo.ContractName+"_"+contractInfo.Version).Output()
+		"--label", contractInfo.ContractName + "_" + contractInfo.Version,
+	}
+	fmt.Println("peer", args)
+	out, err1 := exec.Command(
+		"peer", args...).Output()
 	if err1 != nil {
 		fmt.Println("package the contract " + contractInfo.ContractName + " failed:" + err1.Error())
 		fmt.Println(string(out))
 		return
 	}
 
-	fmt.Println(string(out))
+	fmt.Println("logs", string(out))
 
 	success := Success{
 		Payload: "Package the contract " + contractInfo.ContractName + " successfully",
@@ -344,9 +373,14 @@ func packageChaincode(w http.ResponseWriter, r *http.Request) {
 
 }
 
+var packageIDTemp string
+
 func installChaincode(w http.ResponseWriter, r *http.Request) {
 	setHeader(w)
-
+	if (*r).Method == "OPTIONS" {
+		fmt.Println("Options request discard!")
+		return
+	}
 	var contractInfo = ContractInfo{}
 	err := json.NewDecoder(r.Body).Decode(&contractInfo)
 	if err != nil {
@@ -359,9 +393,13 @@ func installChaincode(w http.ResponseWriter, r *http.Request) {
 	fmt.Println(contractInfo.PeerInfo.Org, contractInfo.PeerInfo.Port, "installing...")
 	//Install the contract
 	fmt.Println("Install the contract", contractInfo.ContractName)
-
+	fmt.Println("executing:")
+	args := []string{
+		"lifecycle", "chaincode", "install", contractInfo.ContractName + ".tar.gz",
+	}
+	fmt.Println("peer", args)
 	out, err1 := exec.Command(
-		"peer", "lifecycle", "chaincode", "install", contractInfo.ContractName+".tar.gz").Output()
+		"peer", args...).Output()
 	if err1 != nil {
 		fmt.Println("install the contract " + contractInfo.ContractName + " failed:" + err1.Error())
 		fmt.Println(string(out))
@@ -385,9 +423,18 @@ func installChaincode(w http.ResponseWriter, r *http.Request) {
 	parts := strings.Split(string(out), "Package ID: ")
 	parts = strings.Split(parts[1], ",")
 	packageID := parts[0]
-
+	packageIDTemp = packageID
 	success := Success{
 		Payload: packageID,
+		Message: "200 OK",
+	}
+	json.NewEncoder(w).Encode(success)
+}
+
+func fetchPackageID(w http.ResponseWriter, r *http.Request) {
+	setHeader(w)
+	success := Success{
+		Payload: packageIDTemp,
 		Message: "200 OK",
 	}
 	json.NewEncoder(w).Encode(success)
@@ -401,6 +448,10 @@ type ApproveInfo struct {
 func approveChaincode(w http.ResponseWriter, r *http.Request) {
 	setHeader(w)
 	//query the package ID of installed contract
+	if (*r).Method == "OPTIONS" {
+		fmt.Println("Options request discard!")
+		return
+	}
 	var approveInfo = ApproveInfo{}
 	err := json.NewDecoder(r.Body).Decode(&approveInfo)
 	if err != nil {
@@ -411,19 +462,38 @@ func approveChaincode(w http.ResponseWriter, r *http.Request) {
 	}
 	setEnvironmentForPeer(approveInfo.ContractInfo.PeerInfo.Org, approveInfo.ContractInfo.PeerInfo.Port)
 	fmt.Println(approveInfo.ContractInfo.PeerInfo.Org, approveInfo.ContractInfo.PeerInfo.Port, "aproving...")
+	//query the contract
+	fmt.Println("query the contract")
+	out, err1 := exec.Command(
+		"peer", "lifecycle", "chaincode", "queryinstalled").Output()
+	if err1 != nil {
+		fmt.Println("query the contract failed:" + err1.Error())
+		fmt.Println(string(out))
+		return
+	}
+	fmt.Println(string(out))
+	parts := strings.Split(string(out), "Package ID: ")
+	parts = strings.Split(parts[1], ",")
+	packageID := parts[0]
+	fmt.Println("Package ID", packageID)
 	//export PRIVATE_DATA_CONFIG=${PWD}/artifacts/private-data/collections_config.json
 	//approve the contract
 	var channel = strings.ToLower(approveInfo.ContractInfo.PeerInfo.Channel)
-	out, err1 := exec.Command(
-		"peer", "lifecycle", "chaincode", "approveformyorg", "-o", "localhost:7050",
+	fmt.Println("executing:")
+	args := []string{
+		"lifecycle", "chaincode", "approveformyorg", "-o", "localhost:7050",
 		"--ordererTLSHostnameOverride", "orderer1.example.com", "--tls",
 		"--cafile", os.Getenv("ORDERER_CA"),
 		"--channelID", channel,
 		"--name", approveInfo.ContractInfo.ContractName,
 		"--version", approveInfo.ContractInfo.Version,
 		"--init-required",
-		"--package-id", approveInfo.PackageID,
-		"--sequence", approveInfo.ContractInfo.Version).Output()
+		"--package-id", packageID,
+		"--sequence", approveInfo.ContractInfo.Version,
+	}
+	fmt.Println("peer", args)
+	out, err1 = exec.Command(
+		"peer", args...).Output()
 	if err1 != nil {
 		fmt.Println("approve the contract failed:" + err1.Error())
 		fmt.Println(string(out))
@@ -431,7 +501,7 @@ func approveChaincode(w http.ResponseWriter, r *http.Request) {
 	}
 
 	success := Success{
-		Payload: "approve the contract " + approveInfo.PackageID + " successfully!",
+		Payload: "approve the contract " + packageID + " successfully!",
 		Message: "200 OK",
 	}
 	json.NewEncoder(w).Encode(success)
@@ -439,7 +509,10 @@ func approveChaincode(w http.ResponseWriter, r *http.Request) {
 
 func checkApprove(w http.ResponseWriter, r *http.Request) {
 	setHeader(w)
-
+	if (*r).Method == "OPTIONS" {
+		fmt.Println("Options request discard!")
+		return
+	}
 	var approveInfo = ApproveInfo{}
 	err := json.NewDecoder(r.Body).Decode(&approveInfo)
 	if err != nil {
@@ -453,14 +526,19 @@ func checkApprove(w http.ResponseWriter, r *http.Request) {
 
 	//check the approval
 	var channel = strings.ToLower(approveInfo.ContractInfo.PeerInfo.Channel)
-	out, err1 := exec.Command(
-		"peer", "lifecycle", "chaincode", "checkcommitreadiness",
+	fmt.Println("executing")
+	args := []string{
+		"lifecycle", "chaincode", "checkcommitreadiness",
 		"--channelID", channel,
 		"--name", approveInfo.ContractInfo.ContractName,
 		"--version", approveInfo.ContractInfo.Version,
 		"--sequence", approveInfo.ContractInfo.Version,
 		"--output", "json",
-		"--init-required").Output()
+		"--init-required",
+	}
+	out, err1 := exec.Command(
+		"peer", args...).Output()
+	fmt.Println("peer", args)
 	if err1 != nil {
 		fmt.Println("check the approvals failed:" + err1.Error())
 		fmt.Println(string(out))
@@ -487,7 +565,10 @@ type InstantiateInfo struct {
 func instantiateChaincode(w http.ResponseWriter, r *http.Request) {
 	fmt.Println("start instantiating the contract")
 	setHeader(w)
-
+	if (*r).Method == "OPTIONS" {
+		fmt.Println("Options request discard!")
+		return
+	}
 	var instantiateInfo = InstantiateInfo{}
 	err := json.NewDecoder(r.Body).Decode(&instantiateInfo)
 	if err != nil {
@@ -510,9 +591,6 @@ func instantiateChaincode(w http.ResponseWriter, r *http.Request) {
 		"--cafile", os.Getenv("ORDERER_CA"),
 		"--channelID", channel,
 		"--name", instantiateInfo.ContractName,
-		"--version", instantiateInfo.Version,
-		"--sequence", instantiateInfo.Version,
-		"--init-required",
 	}
 	for i := 0; i < len(instantiateInfo.Approvers); i++ {
 		arg1 := "--peerAddresses"
@@ -521,15 +599,16 @@ func instantiateChaincode(w http.ResponseWriter, r *http.Request) {
 		arg4 := os.Getenv("PWD") + "/channel/crypto-config/peerOrganizations/" + instantiateInfo.Approvers[i].Org + ".example.com/peers/peer0." + instantiateInfo.Approvers[i].Org + ".example.com/tls/ca.crt"
 		args = append(args, arg1, arg2, arg3, arg4)
 	}
+	args = append(args, "--version", instantiateInfo.Version, "--sequence", instantiateInfo.Version, "--init-required")
 	fmt.Println("instantiating the contract:", args)
-	fmt.Println("args:", args)
+	fmt.Println("executing:")
 	out, err1 := exec.Command("peer", args...).Output()
 	if err1 != nil {
 		fmt.Println("instantiate the contract failed:" + err1.Error())
 		fmt.Println(string(out))
 		return
 	}
-
+	fmt.Println("peer", args)
 	fmt.Println(string(out))
 
 	success := Success{
@@ -547,7 +626,10 @@ type InitializeInfo struct {
 func initializeChaincode(w http.ResponseWriter, r *http.Request) {
 	fmt.Println("Start initializing the contract")
 	setHeader(w)
-
+	if (*r).Method == "OPTIONS" {
+		fmt.Println("Options request discard!")
+		return
+	}
 	var initializeInfo = InitializeInfo{}
 	err := json.NewDecoder(r.Body).Decode(&initializeInfo)
 	if err != nil {
@@ -571,7 +653,7 @@ func initializeChaincode(w http.ResponseWriter, r *http.Request) {
 		"-C", channel,
 		"-n", initializeInfo.InstantiateInfo.ContractName,
 		"--isInit",
-		"-c", "'" + initializeInfo.ArgsJSONString + "'",
+		"-c", initializeInfo.ArgsJSONString,
 	}
 	for i := 0; i < len(initializeInfo.InstantiateInfo.Approvers); i++ {
 		arg1 := "--peerAddresses"
@@ -581,14 +663,14 @@ func initializeChaincode(w http.ResponseWriter, r *http.Request) {
 		args = append(args, arg1, arg2, arg3, arg4)
 	}
 	fmt.Println("iniliazing the contract:", args)
-	fmt.Println("args:", args)
+	fmt.Println("executing:")
 	out, err1 := exec.Command("peer", args...).Output()
 	if err1 != nil {
 		fmt.Println("iniliazing the contract failed:" + err1.Error())
 		fmt.Println(string(out))
 		return
 	}
-
+	fmt.Println("peer", args)
 	fmt.Println(string(out))
 
 	success := Success{
@@ -626,12 +708,25 @@ func setHeader(w http.ResponseWriter) {
 }
 
 func setEnvironmentForPeer(org string, port string) {
+	fmt.Println("Set global environment:")
 	os.Setenv("CORE_PEER_TLS_ENABLED", "true")
+	fmt.Println("CORE_PEER_TLS_ENABLED", "true")
+
 	os.Setenv("ORDERER_CA", os.Getenv("PWD")+"/channel/crypto-config/ordererOrganizations/example.com/orderers/orderer1.example.com/msp/tlscacerts/tlsca.example.com-cert.pem")
+	fmt.Println("ORDERER_CA", os.Getenv("PWD")+"/channel/crypto-config/ordererOrganizations/example.com/orderers/orderer1.example.com/msp/tlscacerts/tlsca.example.com-cert.pem")
+
 	os.Setenv("FABRIC_CFG_PATH", os.Getenv("PWD")+"/channel/config/")
+	fmt.Println("FABRIC_CFG_PATH", os.Getenv("PWD")+"/channel/config/")
 	//set global variables for peer
 	os.Setenv("CORE_PEER_LOCALMSPID", Capitalize(org)+"MSP")
+	fmt.Println("CORE_PEER_LOCALMSPID", Capitalize(org)+"MSP")
+
 	os.Setenv("CORE_PEER_TLS_ROOTCERT_FILE", os.Getenv("PWD")+"/channel/crypto-config/peerOrganizations/"+org+".example.com/peers/peer0."+org+".example.com/tls/ca.crt")
+	fmt.Println("CORE_PEER_TLS_ROOTCERT_FILE", os.Getenv("PWD")+"/channel/crypto-config/peerOrganizations/"+org+".example.com/peers/peer0."+org+".example.com/tls/ca.crt")
+
 	os.Setenv("CORE_PEER_MSPCONFIGPATH", os.Getenv("PWD")+"/channel/crypto-config/peerOrganizations/"+org+".example.com/users/Admin@"+org+".example.com/msp")
+	fmt.Println("CORE_PEER_MSPCONFIGPATH", os.Getenv("PWD")+"/channel/crypto-config/peerOrganizations/"+org+".example.com/users/Admin@"+org+".example.com/msp")
+
 	os.Setenv("CORE_PEER_ADDRESS", "localhost:"+port)
+	fmt.Println("CORE_PEER_ADDRESS", "localhost:"+port)
 }

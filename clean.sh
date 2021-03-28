@@ -7,3 +7,4 @@ rm -f *.tar.gz
 rm -f docker-compose.yaml
 docker rm -f $(docker ps -a -q)
 rm log.txt
+docker volume prune -f
