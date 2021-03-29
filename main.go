@@ -11,6 +11,7 @@ import (
 
 	"github.com/gorilla/mux"
 	"github.com/zhaizhonghao/configtxTool/services/configtx"
+	"github.com/zhaizhonghao/configtxTool/services/connection"
 	"github.com/zhaizhonghao/configtxTool/services/crypto"
 )
 
@@ -110,11 +111,13 @@ func main() {
 
 	router.HandleFunc("/contract/initialize", initializeChaincode).Methods("POST", http.MethodOptions)
 
+	router.HandleFunc("/display/explorer", setupExplorer).Methods("POST", http.MethodOptions)
+
 	router.Use(mux.CORSMethodMiddleware(router))
 
-	fmt.Println("Server is listenning on localhost:8080")
+	fmt.Println("Server is listenning on localhost:8181")
 
-	http.ListenAndServe(":8080", router)
+	http.ListenAndServe(":8181", router)
 }
 
 func requestConfigtx(w http.ResponseWriter, r *http.Request) {
@@ -188,6 +191,7 @@ func requestCrypto(w http.ResponseWriter, r *http.Request) {
 	//Generate crypto-config.yaml
 	tpl = template.Must(template.ParseGlob("templates/crypto/*.yaml"))
 	file, err := os.Create("channel/crypto-config.yaml")
+	defer file.Close()
 	if err != nil {
 		fmt.Println("Fail to create file!")
 	}
@@ -675,6 +679,65 @@ func initializeChaincode(w http.ResponseWriter, r *http.Request) {
 
 	success := Success{
 		Payload: "iniliazing the contract " + initializeInfo.InstantiateInfo.ContractName + " successfully!",
+		Message: "200 OK",
+	}
+	json.NewEncoder(w).Encode(success)
+}
+
+func setupExplorer(w http.ResponseWriter, r *http.Request) {
+	fmt.Println("start setuping the explorer")
+	setHeader(w)
+	if (*r).Method == "OPTIONS" {
+		fmt.Println("Options request discard!")
+		return
+	}
+	var channel = connection.Channel{}
+	err := json.NewDecoder(r.Body).Decode(&channel)
+	if err != nil {
+		fmt.Println("parse channel error", err)
+		return
+	}
+	if channel.ChannelName == "" {
+		return
+	}
+	fmt.Println("Get channel", channel)
+	//Generate connection file
+	tpl = template.Must(template.ParseGlob("templates/explorer/*.json"))
+	file, err := os.Create("explorer/connection-profile/first-network_2.2.json")
+	defer file.Close()
+	if err != nil {
+		fmt.Println("Fail to create file!")
+	}
+	err = connection.GenerateConnectionTemplate(channel, tpl, file)
+	if err != nil {
+		fmt.Println("Fail to generate firt-network_2.2.json", err)
+	}
+	//copy crypto-config folder into the explorer folder
+	fmt.Println("Copying the crypto-config folder into the the explorer folder")
+	out, err1 := exec.Command("cp", "-r", "channel/crypto-config/", "explorer/crypto-config").Output()
+	if err1 != nil {
+		fmt.Println("Copy the crypto-config failed:" + err1.Error())
+		fmt.Println(string(out))
+		return
+	}
+	//create the data and walletstore folders in the explorer folder
+	fmt.Println("Creating the data and wallestore folder into the the explorer folder")
+	out, err1 = exec.Command("mkdir", "explorer/data", "explorer/walletstore").Output()
+	if err1 != nil {
+		fmt.Println("Copy the crypto-config failed:" + err1.Error())
+		fmt.Println(string(out))
+		return
+	}
+	//up the explorer docker
+	fmt.Println("uping the explorer docker")
+	out, err1 = exec.Command("docker-compose", "-f", "explorer/docker-compose.yaml", "up").Output()
+	if err1 != nil {
+		fmt.Println("Copy the crypto-config failed:" + err1.Error())
+		fmt.Println(string(out))
+		return
+	}
+	success := Success{
+		Payload: "setup the explorer successfully!",
 		Message: "200 OK",
 	}
 	json.NewEncoder(w).Encode(success)
