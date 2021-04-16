@@ -3,6 +3,7 @@ package main
 import (
 	"encoding/json"
 	"fmt"
+	"io/ioutil"
 	"net/http"
 	"os"
 	"os/exec"
@@ -156,7 +157,24 @@ func requestConfigtx(w http.ResponseWriter, r *http.Request) {
 		fmt.Println("Execute Command for generating channel.tx failed:" + err.Error())
 		return
 	}
-	json.NewEncoder(w).Encode(cfgtx)
+	//判读文件是否存在
+	_, err = os.Stat("channel/configtx.yaml")
+	if err != nil && os.IsNotExist(err) {
+		fmt.Println("file does not exist!")
+		return
+	}
+	//读取文件
+	content, err := ioutil.ReadFile("channel/configtx.yaml")
+	if err != nil {
+		fmt.Println("fail to read file", err)
+		return
+	} else {
+		success := Success{
+			Payload: string(content),
+			Message: "200 OK",
+		}
+		json.NewEncoder(w).Encode(success)
+	}
 }
 
 func revokeConfigtx(w http.ResponseWriter, r *http.Request) {
