@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"io/ioutil"
@@ -13,6 +14,9 @@ import (
 	"github.com/gorilla/mux"
 	"github.com/zhaizhonghao/configtxTool/services/configtx"
 	"github.com/zhaizhonghao/configtxTool/services/crypto"
+
+	"github.com/docker/docker/api/types"
+	"github.com/docker/docker/client"
 )
 
 type Success struct {
@@ -90,6 +94,8 @@ func main() {
 
 	//Section Node Deployment
 	router.HandleFunc("/node", nodeDeploy).Methods("GET", http.MethodOptions)
+
+	router.HandleFunc("/node/states", getNodeStates).Methods("GET", http.MethodOptions)
 
 	//Section Channel Management
 	router.HandleFunc("/channel", createChannel).Methods("POST", http.MethodOptions)
@@ -259,6 +265,46 @@ func nodeDeploy(w http.ResponseWriter, r *http.Request) {
 		Message: "200 OK",
 	}
 	json.NewEncoder(w).Encode(success)
+}
+
+type NodeState struct {
+	Name  string `json:"name"`
+	State bool   `json:"state"`
+}
+
+func getNodeStates(w http.ResponseWriter, r *http.Request) {
+	setHeader(w)
+	if (*r).Method == "OPTIONS" {
+		fmt.Println("Options request discard!")
+		return
+	}
+	fmt.Println("Get states of nodes")
+
+	ctx := context.Background()
+	cli, err := client.NewClientWithOpts(client.FromEnv, client.WithAPIVersionNegotiation())
+	if err != nil {
+		panic(err)
+	}
+
+	containers, err := cli.ContainerList(ctx, types.ContainerListOptions{})
+	if err != nil {
+		panic(err)
+	}
+
+	nodes := []NodeState{}
+
+	for _, container := range containers {
+		node := NodeState{}
+		node.Name = strings.Split(container.Names[0], "/")[1]
+		if container.State == "running" {
+			node.State = true
+		} else {
+			node.State = false
+		}
+		nodes = append(nodes, node)
+	}
+	fmt.Println(nodes)
+	json.NewEncoder(w).Encode(nodes)
 }
 
 func createChannel(w http.ResponseWriter, r *http.Request) {
