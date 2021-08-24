@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -29,9 +30,10 @@ type ChannelID struct {
 }
 
 type PeerInfo struct {
-	Org     string `json:"Org"`
-	Port    string `json:"Port"`
-	Channel string `json:"Channel"`
+	HostName string `json:"HostName"`
+	Org      string `json:"Org"`
+	Port     string `json:"Port"`
+	Channel  string `json:"Channel"`
 }
 
 var tpl *template.Template
@@ -47,6 +49,14 @@ func GetPortOfCouchDB(a int, b int) int {
 
 func GetGeneralPortOfPeer(a int, b int) int {
 	return ((2*a+b-2)+7)*1000 + 51
+}
+
+func GetPortOfBootstrapPeer(a int, b int) int {
+	if b == 0 {
+		return ((2*a+b+1-2)+7)*1000 + 51
+	} else {
+		return ((2*a+b-1-2)+7)*1000 + 51
+	}
 }
 
 func GetChaincodePortOfPeer(a int, b int) int {
@@ -75,7 +85,7 @@ var fm = template.FuncMap{
 	"GetGeneralPortOfPeer":   GetGeneralPortOfPeer,
 	"GetChaincodePortOfPeer": GetChaincodePortOfPeer,
 	"GetIdOfBootstrapNode":   GetIdOfBootstrapNode,
-	"GetPortOfBootstrapNode": GetPortOfBootstrapNode,
+	"GetPortOfBootstrapPeer": GetPortOfBootstrapPeer,
 }
 
 func main() {
@@ -101,6 +111,8 @@ func main() {
 	router.HandleFunc("/channel", createChannel).Methods("POST", http.MethodOptions)
 
 	router.HandleFunc("/channel/join", joinChannel).Methods("POST", http.MethodOptions)
+
+	router.HandleFunc("/channel/updateAnchorPeers", updateAnchorPeers).Methods("POST", http.MethodOptions)
 
 	//Section Smart Contract
 	router.HandleFunc("/contract/package", packageChaincode).Methods("POST", http.MethodOptions)
@@ -151,8 +163,13 @@ func requestConfigtx(w http.ResponseWriter, r *http.Request) {
 	cmd := exec.Command("configtxgen", "-profile", "OrdererGenesis", "-configPath", "channel", "-channelID", "sys-channel", "-outputBlock", "channel/genesis.block")
 
 	err = cmd.Run()
+	wout := bytes.NewBuffer(nil)
+	cmd.Stderr = wout
+
 	if err != nil {
 		fmt.Println("Execute Command for generating genesis.block failed:" + err.Error())
+		//将错误提示输出
+		fmt.Printf("Stderr: %s\n", string(wout.Bytes()))
 		return
 	}
 	//Generate the [channelName].tx for specific channel
@@ -162,6 +179,17 @@ func requestConfigtx(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		fmt.Println("Execute Command for generating channel.tx failed:" + err.Error())
 		return
+	}
+
+	//Generating anchor peer update
+	for i := 0; i < len(cfgtx.Organizations); i++ {
+		org := cfgtx.Organizations[i]
+		cmd = exec.Command("configtxgen", "-profile", cfgtx.Channel.Name, "-configPath", "channel", "-outputAnchorPeersUpdate", "channel/"+org.Name+"MSPanchors"+".tx", "-channelID", strings.ToLower(cfgtx.Channel.Name), "--asOrg", org.Name+"MSP")
+		err = cmd.Run()
+		if err != nil {
+			fmt.Println("Execute Command for generating update anchor peer tx failed:" + err.Error())
+			return
+		}
 	}
 	//判读文件是否存在
 	_, err = os.Stat("channel/configtx.yaml")
@@ -380,6 +408,48 @@ func joinChannel(w http.ResponseWriter, r *http.Request) {
 
 	success := Success{
 		Payload: "Join Channel " + channel + " successfully",
+		Message: "200 OK",
+	}
+	json.NewEncoder(w).Encode(success)
+}
+
+func updateAnchorPeers(w http.ResponseWriter, r *http.Request) {
+	setHeader(w)
+	if (*r).Method == "OPTIONS" {
+		fmt.Println("Options request discard!")
+		return
+	}
+	var peerInfo = PeerInfo{}
+	err := json.NewDecoder(r.Body).Decode(&peerInfo)
+	if err != nil {
+		fmt.Println(err)
+	}
+	if peerInfo.Org == "" {
+		return
+	}
+
+	var channel = strings.ToLower(peerInfo.Channel)
+
+	setEnvironmentForPeer(peerInfo.Org, peerInfo.Port)
+	fmt.Println(peerInfo.HostName, peerInfo.Port, "becomes anchor!")
+	//update anchor
+	out, err1 := exec.Command("peer", "channel", "update",
+		"-o", "localhost:7050",
+		"--ordererTLSHostnameOverride", "orderer1.example.com",
+		"-c", channel,
+		"-f", "channel/"+Capitalize(peerInfo.Org)+"MSPanchors.tx",
+		"--tls", os.Getenv("CORE_PEER_TLS_ENABLED"),
+		"--cafile", os.Getenv("ORDERER_CA")).Output()
+	if err1 != nil {
+		fmt.Println("Update the anchor " + peerInfo.HostName + " failed:" + err1.Error())
+		fmt.Println(string(out))
+		return
+	}
+
+	fmt.Println(string(out))
+
+	success := Success{
+		Payload: "Update the anchor " + peerInfo.HostName + " successfully",
 		Message: "200 OK",
 	}
 	json.NewEncoder(w).Encode(success)

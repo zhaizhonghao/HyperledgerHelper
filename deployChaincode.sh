@@ -259,6 +259,20 @@ chaincodeInvoke() {
         --transient "{\"car\":\"$CAR\"}"
 }
 
+chaincodeInvoke1(){
+    ## Add private data
+    export CAR=$(echo -n "{\"key\":\"1111\", \"make\":\"Tesla\",\"model\":\"Tesla A1\",\"color\":\"White\",\"owner\":\"pavan\",\"price\":\"10000\"}" | base64 | tr -d \\n)
+    peer chaincode invoke -o localhost:7050 \
+        --ordererTLSHostnameOverride orderer1.example.com \
+        --tls $CORE_PEER_TLS_ENABLED \
+        --cafile $ORDERER_CA \
+        -C $CHANNEL_NAME -n ${CC_NAME} \
+        --peerAddresses localhost:7051 --tlsRootCertFiles $PEER0_ORG1_CA \
+        --peerAddresses localhost:9051 --tlsRootCertFiles $PEER0_ORG2_CA \
+        -c '{"function": "createPrivateCar", "Args":[]}' \
+        --transient "{\"car\":\"$CAR\"}"
+}
+
 # chaincodeInvoke
 
 chaincodeQuery() {
@@ -281,17 +295,17 @@ chaincodeQuery() {
 # Run this function if you add any new dependency in chaincode
 #presetup
 
-packageChaincode
-installChaincode
-queryInstalled
-approveForMyOrg1
-checkCommitReadyness
-approveForMyOrg2
-checkCommitReadyness
-commitChaincodeDefination
-queryCommitted
-chaincodeInvokeInit
-sleep 5
+#packageChaincode
+#installChaincode
+#queryInstalled
+#approveForMyOrg1
+#checkCommitReadyness
+#approveForMyOrg2
+#checkCommitReadyness
+#commitChaincodeDefination
+#queryCommitted
+#chaincodeInvokeInit
+#sleep 5
 chaincodeInvoke
-sleep 3
-chaincodeQuery
+#sleep 3
+#chaincodeQuery
